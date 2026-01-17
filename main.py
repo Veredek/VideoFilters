@@ -112,6 +112,30 @@ class Filters:
         return frame
 
 
+def mux_audio(
+    video_no_audio: str, # path
+    original_video: str, # path
+    output_path: str # path
+) -> None:
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", video_no_audio,
+        "-i", original_video,
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        output_path
+    ]
+
+    subprocess.run(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+
 def save_image(img: MatLike, filters: Filters):
     path = filedialog.asksaveasfilename(
         title="Salvar imagem",
@@ -129,8 +153,8 @@ def save_image(img: MatLike, filters: Filters):
     cv2.imwrite(path, img)
 
 
-def save_video(path: str, filters: Filters):
-    cap = cv2.VideoCapture(path)
+def save_video(input_path: str, filters: Filters):
+    cap = cv2.VideoCapture(input_path)
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -148,8 +172,10 @@ def save_video(path: str, filters: Filters):
         ]
     )
 
+    temp_path = f"{uuid.uuid4().hex}.mp4"
+
     writer = cv2.VideoWriter(
-        filename=output_path,
+        filename=temp_path,
         fourcc=fourcc,
         fps=fps,
         frameSize=(w, h)
@@ -163,10 +189,20 @@ def save_video(path: str, filters: Filters):
         frame = filters.apply_filter(frame)
         writer.write(frame)
 
-    messagebox.showinfo("Save", "Video Saved Successfully!")
-
     cap.release()
     writer.release()
+
+    mux_audio(
+        video_no_audio=temp_path,
+        original_video=input_path,
+        output_path=output_path
+    )
+
+    # Delete temporary path
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+
+    messagebox.showinfo("Save", "Video Saved Successfully!")
 
 
 class GUI:
