@@ -1,0 +1,63 @@
+from dataclasses import dataclass
+from typing import Callable
+from cv2.typing import MatLike
+from typing import Dict, TypeAlias
+
+
+@dataclass(frozen=True)
+class ParamDef:
+    default: int
+    min: int | Callable[[MatLike], int]
+    max: int | Callable[[MatLike], int]
+    step: int = 1
+    ui: str = "scale"
+
+
+ParamName: TypeAlias = str
+FilterName: TypeAlias = str
+ParamRegistry: TypeAlias = Dict[ParamName, ParamDef]
+FilterParamRegistry: TypeAlias = Dict[FilterName, ParamRegistry]
+
+
+PARAMS_DEFS: FilterParamRegistry = {
+    "original": {},
+
+    "scanlines": {
+        "intensity": ParamDef(
+            default=50,
+            min=0,
+            max=100
+        ),
+        "spacing": ParamDef(
+            default=2,
+            min=1,
+            max=lambda frame: frame.shape[0]
+        )
+    },
+
+    "blur": {
+        "blur_intensity": ParamDef(
+            default=1,
+            min=0,
+            max=50
+        )
+    },
+
+    "chromatic_aberration": {
+        "shift_r": ParamDef(
+            default=5,
+            min=-50,
+            max=50
+        ),
+        "shift_g": ParamDef(
+            default=0,
+            min=-50,
+            max=50
+        ),
+        "shift_b": ParamDef(
+            default=-5,
+            min=-50,
+            max=50
+        )
+    }
+}

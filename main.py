@@ -9,6 +9,7 @@ from tkinter import filedialog, ttk, messagebox
 from PIL import Image, ImageTk
 from filters import *
 from typing import List, Callable, Any, Dict
+from params_defs import PARAMS_DEFS
 
 
 PADX = 10
@@ -22,12 +23,16 @@ FilterFn = Callable[..., MatLike]
 class Filters:
     def __init__(self):
         self.selected: None | str = None
-        self.params: Dict[str, Dict[str, Any]] = {}
 
-        # region ----|1|---- Filter Params Private
-        self._intensity = 50
-        self._spacing = 2
-        self._blur_intensity = 1
+        # region ----|1|---- Filter Params
+        self._params_defs = PARAMS_DEFS
+        self.params = {}
+
+        for filter_name in self._params_defs.keys():
+            param_registry = self._params_defs.get(filter_name, {})
+            self.params.setdefault(filter_name, {})
+            for param_name, cfg in param_registry.items():
+                self.params[filter_name][param_name] = cfg.default
         # endregion -|1|-
 
         # region ----|1|---- Define filters
@@ -52,61 +57,28 @@ class Filters:
         self.all_filters_map: dict[str, FilterFn] = self.filters_map | self.t_filters_map
         # endregion -|1|-
 
-    # region ----|1|---- Filter Params Properties
-    @property
-    def intensity(self) -> int:
-        return self._intensity
+    def set_param(
+            self,
+            filter_name: str,
+            param: str,
+            value: int
+        ) -> None:
 
-    @intensity.setter
-    def intensity(self, value: int):
-        self._intensity = max(0, (min(100, value)))
+        cfg = self._params_defs[filter_name][param]
 
-    @property
-    def spacing(self) -> int:
-        return self._spacing
+        def resolve(v):
+            if callable(v):
+                return v(FRAME)
+            return v
 
-    @spacing.setter
-    def spacing(self, value: int):
-        frame_height = FRAME.shape[0]
-        self._spacing = max(1, min(frame_height, value))
+        min_v = resolve(cfg.min)
+        max_v = resolve(cfg.max)
 
-    @property
-    def blur_intensity(self) -> int:
-        return self._blur_intensity
-
-    @blur_intensity.setter
-    def blur_intensity(self, value: int):
-        self._blur_intensity = max(0, (min(50, value)))
-    # endregion -|1|-
-
-    def change_param(self, param: str, signal: str|None=None, value: int|None=None) -> None:
-        print(f"{param}: {getattr(self, param)}", end=" -> ")
-
-        if   signal == "+":
-            setattr(self, param, (getattr(self, param) + 1))
-        elif signal == "-":
-            setattr(self, param, (getattr(self, param) - 1))
-        elif isinstance(value, int):
-            setattr(self, param, value)
-
-        print(f"{getattr(self, param)}")
-
-    def build_kwargs(self, filter_fn: Callable) -> dict:
-        sig = inspect.signature(filter_fn)
-
-        kwargs = {}
-        for name in sig.parameters:
-            if name == "frame":
-                continue
-
-            if hasattr(self, name):
-                kwargs[name] = getattr(self, name)
-
-        return kwargs
+        self.params[filter_name][param] = max(min_v, min(max_v, value))
 
     def apply_filter(self, frame: MatLike) -> MatLike:
         filter_fn = self.all_filters_map[self.selected]
-        kwargs = self.build_kwargs(filter_fn=filter_fn)
+        kwargs = self.params.get(self.selected)
         frame = filter_fn(frame, **kwargs)
 
         return frame
@@ -413,25 +385,12 @@ class GUI:
         for widget in self.params_frame.winfo_children():
             widget.destroy()
 
-        sig = inspect.signature(filter_fn)
         filter_name = filter_fn.__name__
+        filter_params: Dict[str, int] = self.filters.params[filter_name]
 
-        params = self.filters.params.setdefault(filter_name, {})
+        for param, value in filter_params.items():
 
-        for name, param in sig.parameters.items():
-            if name == "frame":
-                continue
-
-            # Get the default value else 0
-            default = (
-                    param.default
-                    if param.default is not inspect.Parameter.empty
-                    else 0
-                )
-
-            params.setdefault(name, default)
-
-            label = tk.Label(self.params_frame, text=name)
+            label = tk.Label(self.params_frame, text=param)
             label.pack()
 
             param_controls_grid = tk.Frame(self.params_frame)
@@ -447,21 +406,24 @@ class GUI:
             param_entry = tk.Entry(
                 param_controls_grid,
                 width=5,
-                textvariable=tk.IntVar(value=default),
+                textvariable=tk.IntVar(value=value),
                 justify="center",
                 validate="key",
                 validatecommand=(validate_int_entry, "%P")
             )
             param_entry.bind("<Return>",
-                             lambda event, p=name, e=param_entry:
-                             self.mod_filter_param(param=p, entry=e))
+                             lambda event,f=filter_name, p=param, e=param_entry:
+                             self.mod_filter_param(filter_name=f, param=p, entry=e))
             param_entry.grid(row=0, column=1)
 
             # (-)
             minus_btn = tk.Button(
                 param_controls_grid,
                 text="-",
-                command=lambda e=param_entry, p=name: self.mod_filter_param(param=p, signal="-", entry=e)
+                command=(
+                    lambda f=filter_name, e=param_entry, p=param:
+                        self.mod_filter_param(filter_name=f, param=p, signal="-", entry=e)
+                )
             )
             minus_btn.grid(row=0, column=0, sticky="ew")
 
@@ -469,19 +431,31 @@ class GUI:
             plus_btn = tk.Button(
                 param_controls_grid,
                 text="+",
-                command=lambda e=param_entry, p=name: self.mod_filter_param(param=p, signal="+", entry=e)
+                command=(
+                    lambda f=filter_name, e=param_entry, p=param:
+                        self.mod_filter_param(filter_name=f, param=p, signal="+", entry=e)
+                )
             )
             plus_btn.grid(row=0, column=2, sticky="ew")
 
             # Pack
             param_controls_grid.pack(padx=30, pady=PADY)
 
-    def mod_filter_param(self, param: str, signal: str|None=None, entry: tk.Entry|None=None) -> None:
-        value = int(entry.get())
+    def mod_filter_param(self, filter_name: str, param: str, signal: str|None=None, entry: tk.Entry|None=None) -> None:
+        if signal == "-":
+            value = self.filters.params[filter_name][param] - 1
+
+        elif signal == "+":
+            value = self.filters.params[filter_name][param] + 1
+
+        else:
+            value = int(entry.get())
+
         int_var = tk.IntVar(name=entry["textvariable"])
 
-        self.filters.change_param(param=param, signal=signal, value=value)
-        int_var.set(getattr(self.filters, param))
+        self.filters.set_param(filter_name, param, value)
+        new_value = self.filters.params[filter_name][param]
+        int_var.set(new_value)
         self.show_image(self.selected_file)
 
 
