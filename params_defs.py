@@ -43,7 +43,7 @@ PARAMS_DEFS: FilterParamRegistry = {
         )
     },
 
-    "chromatic_aberration": {
+    "ca_linear": {
         "shift_r": ParamDef(
             default=5,
             min=-50,
