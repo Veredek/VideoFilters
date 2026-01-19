@@ -441,7 +441,9 @@ class GUI:
             param_controls_grid.grid_columnconfigure(2, weight=1)
 
             # (Return)
-            validate_int_entry = self.root.register(lambda s: s.isdigit() or s == "")
+            validate_int_entry = self.root.register(
+                lambda s: s in ("", "-") or s.lstrip("-").isdigit()
+            )
             param_entry = tk.Entry(
                 param_controls_grid,
                 width=5,
