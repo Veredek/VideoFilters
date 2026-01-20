@@ -59,5 +59,23 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=-50,
             max=50
         )
+    },
+
+    "ca_radial": {
+        "strength_r": ParamDef(
+            default=2,
+            min=-50,
+            max=50
+        ),
+        "strength_g": ParamDef(
+            default=0,
+            min=-50,
+            max=50
+        ),
+        "strength_b": ParamDef(
+            default=-2,
+            min=-50,
+            max=50
+        )
     }
 }
