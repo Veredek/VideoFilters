@@ -77,5 +77,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=-50,
             max=50
         )
+    },
+
+    "warp": {
+        "curvature": ParamDef(
+            default=20,
+            min=0,
+            max=100
+        )
     }
 }
