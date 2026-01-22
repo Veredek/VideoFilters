@@ -85,5 +85,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=0,
             max=100
         )
+    },
+
+    "saturation": {
+        "intensity": ParamDef(
+            default=0,
+            min=-100,
+            max=100
+        )
     }
 }

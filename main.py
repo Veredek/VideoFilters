@@ -42,7 +42,8 @@ class Filters:
             blur,
             ca_linear,
             ca_radial,
-            warp
+            warp,
+            saturation
         )
         self.t_filters: List[Callable] = ()
         'Filters that work only with time'
