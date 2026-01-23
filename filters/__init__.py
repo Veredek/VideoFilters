@@ -8,3 +8,4 @@ from .saturation import saturation
 from .warmth import warmth
 from .contrast import contrast
 from .vignette import vignette
+from .polaroid import polaroid

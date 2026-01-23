@@ -46,7 +46,8 @@ class Filters:
             saturation,
             warmth,
             contrast,
-            vignette
+            vignette,
+            polaroid
         )
         self.t_filters: List[Callable] = ()
         'Filters that work only with time'
