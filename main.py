@@ -86,7 +86,10 @@ class Filters:
     def apply_filter(self, frame: MatLike) -> MatLike:
         filter_fn = self.all_filters_map[self.selected]
         kwargs = self.params.get(self.selected)
-        frame = filter_fn(frame, **kwargs)
+        if kwargs:
+            frame = filter_fn(frame, **kwargs)
+        else:
+            frame = filter_fn(frame)
 
         return frame
 
@@ -393,7 +396,7 @@ class GUI:
             widget.destroy()
 
         filter_name = filter_fn.__name__
-        filter_params: Dict[str, int] = self.filters.params[filter_name]
+        filter_params: Dict[str, int] = self.filters.params.get(filter_name, {})
 
         for param, value in filter_params.items():
 
