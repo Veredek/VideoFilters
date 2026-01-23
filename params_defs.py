@@ -109,5 +109,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=-100,
             max=100
         )
+    },
+
+    "vignette": {
+        "intensity": ParamDef(
+            default=0,
+            min=-100,
+            max=100
+        )
     }
 }
