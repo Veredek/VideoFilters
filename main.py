@@ -44,7 +44,8 @@ class Filters:
             ca_radial,
             warp,
             saturation,
-            warmth
+            warmth,
+            contrast
         )
         self.t_filters: List[Callable] = ()
         'Filters that work only with time'

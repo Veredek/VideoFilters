@@ -101,5 +101,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=-100,
             max=100
         )
+    },
+
+    "contrast": {
+        "intensity": ParamDef(
+            default=0,
+            min=-100,
+            max=100
+        )
     }
 }
