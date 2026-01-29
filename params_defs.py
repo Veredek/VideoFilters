@@ -125,5 +125,23 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=0,
             max=500
         )
+    },
+
+    "noise": {
+        "x_noise": ParamDef(
+            default=10,
+            min=0,
+            max=100
+        ),
+        "y_noise": ParamDef(
+            default=10,
+            min=0,
+            max=100
+        ),
+        "intensity": ParamDef(
+            default=20,
+            min=0,
+            max=100
+        )
     }
 }
