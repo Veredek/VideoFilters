@@ -143,5 +143,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=0,
             max=100
         )
+    },
+
+    "posterize": {
+        "levels": ParamDef(
+            default=4,
+            min=2,
+            max=256
+        )
     }
 }

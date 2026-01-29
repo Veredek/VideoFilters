@@ -49,7 +49,8 @@ class Filters:
             vignette,
             polaroid,
             gamma,
-            noise
+            noise,
+            posterize
         )
         self.t_filters: List[Callable] = ()
         'Filters that work only with time'
