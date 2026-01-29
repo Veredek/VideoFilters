@@ -117,5 +117,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=-100,
             max=100
         )
+    },
+
+    "gamma_linear": {
+        "gamma": ParamDef(
+            default=100,
+            min=0,
+            max=500
+        )
     }
 }

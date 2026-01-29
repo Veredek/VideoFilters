@@ -47,7 +47,8 @@ class Filters:
             warmth,
             contrast,
             vignette,
-            polaroid
+            polaroid,
+            gamma_linear
         )
         self.t_filters: List[Callable] = ()
         'Filters that work only with time'
