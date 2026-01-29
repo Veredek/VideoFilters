@@ -9,5 +9,5 @@ from .warmth import warmth
 from .contrast import contrast
 from .vignette import vignette
 from .polaroid import polaroid
-from .gamma_linear import gamma_linear
+from .gamma import gamma
 from .noise import noise

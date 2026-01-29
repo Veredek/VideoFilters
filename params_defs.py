@@ -119,7 +119,7 @@ PARAMS_DEFS: FilterParamRegistry = {
         )
     },
 
-    "gamma_linear": {
+    "gamma": {
         "gamma": ParamDef(
             default=100,
             min=0,

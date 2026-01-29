@@ -48,7 +48,7 @@ class Filters:
             contrast,
             vignette,
             polaroid,
-            gamma_linear,
+            gamma,
             noise
         )
         self.t_filters: List[Callable] = ()
