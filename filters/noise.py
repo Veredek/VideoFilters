@@ -41,10 +41,11 @@ def noise(
 
     # Noise map
     gamma_map = 1 + noise * intensity_norm * 2
+    gamma_map = np.clip(gamma_map, 0.2, 3.0)
 
     # Apply
     out_norm = np.power(img_norm, gamma_map[..., None])
-    out_norm = np.clip(img_norm, 0.0, 1.0)
+    out_norm = np.clip(out_norm, 0.0, 1.0)
 
     out = (out_norm * 255.0).astype(np.uint8)
 
