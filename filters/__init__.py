@@ -13,3 +13,4 @@ from .gamma import gamma
 from .noise import noise
 from .posterize import posterize
 from .bit_depth import bit_depth
+from .downscale_resolution import downscale_resolution

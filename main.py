@@ -51,7 +51,8 @@ class Filters:
             gamma,
             noise,
             posterize,
-            bit_depth
+            bit_depth,
+            downscale_resolution
         )
         self.t_filters: List[Callable] = ()
         'Filters that work only with time'

@@ -159,5 +159,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=1,
             max=8
         )
+    },
+
+    "downscale_resolution": {
+        "scale_percent": ParamDef(
+            default=50,
+            min=1,
+            max=100
+        )
     }
 }
