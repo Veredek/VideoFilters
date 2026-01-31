@@ -167,5 +167,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=1,
             max=100
         )
+    },
+
+    "banding": {
+        "levels": ParamDef(
+            default=8,
+            min=2,
+            max=256
+        )
     }
 }

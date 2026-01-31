@@ -52,7 +52,8 @@ class Filters:
             noise,
             posterize,
             bit_depth,
-            downscale_resolution
+            downscale_resolution,
+            banding
         )
         self.t_filters: List[Callable] = ()
         'Filters that work only with time'
