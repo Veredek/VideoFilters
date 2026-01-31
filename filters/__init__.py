@@ -12,3 +12,4 @@ from .polaroid import polaroid
 from .gamma import gamma
 from .noise import noise
 from .posterize import posterize
+from .bit_depth import bit_depth

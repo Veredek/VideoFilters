@@ -50,7 +50,8 @@ class Filters:
             polaroid,
             gamma,
             noise,
-            posterize
+            posterize,
+            bit_depth
         )
         self.t_filters: List[Callable] = ()
         'Filters that work only with time'

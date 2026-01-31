@@ -151,5 +151,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=2,
             max=256
         )
+    },
+
+    "bit_depth": {
+        "bits": ParamDef(
+            default=4,
+            min=1,
+            max=8
+        )
     }
 }
