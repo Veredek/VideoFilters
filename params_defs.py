@@ -175,5 +175,13 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=2,
             max=256
         )
+    },
+
+    "banding_luminance": {
+        "levels": ParamDef(
+            default=8,
+            min=2,
+            max=256
+        )
     }
 }
