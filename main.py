@@ -14,6 +14,7 @@ from cv2.typing import MatLike
 from tkinter import filedialog, ttk, messagebox
 from PIL import Image, ImageTk
 from filters import *
+from filters import ALL_FILTERS
 from typing import List, Callable, Any, Dict
 from params_defs import PARAMS_DEFS
 
@@ -30,50 +31,9 @@ def filter_process_loop(
     ctrl_queue: MpQueue,
     stop_event: MpEvent
 ) -> None:
-    from filters import (
-        original,
-        scanlines,
-        blur,
-        ca_linear,
-        ca_radial,
-        warp,
-        saturation,
-        warmth,
-        contrast,
-        vignette,
-        polaroid,
-        gamma,
-        noise,
-        posterize,
-        bit_depth,
-        downscale_resolution,
-        banding,
-        banding_luminance
-    )
+    from filters import ALL_FILTERS
 
-    filters_map = {
-        func.__name__: func
-        for func in (
-            original,
-            scanlines,
-            blur,
-            ca_linear,
-            ca_radial,
-            warp,
-            saturation,
-            warmth,
-            contrast,
-            vignette,
-            polaroid,
-            gamma,
-            noise,
-            posterize,
-            bit_depth,
-            downscale_resolution,
-            banding,
-            banding_luminance
-        )
-    }
+    filters_map = {func.__name__: func for func in ALL_FILTERS}
 
     filter_name = "original"
     params: Dict[str, int] = {}
@@ -141,26 +101,7 @@ class Filters:
         # endregion -|1|-
 
         # region ----|1|---- Define filters
-        self.filters: List[Callable] = (
-            original,
-            scanlines,
-            blur,
-            ca_linear,
-            ca_radial,
-            warp,
-            saturation,
-            warmth,
-            contrast,
-            vignette,
-            polaroid,
-            gamma,
-            noise,
-            posterize,
-            bit_depth,
-            downscale_resolution,
-            banding,
-            banding_luminance
-        )
+        self.filters: List[Callable] = ALL_FILTERS
         self.t_filters: List[Callable] = ()
         'Filters that work only with time'
         # endregion -|1|-

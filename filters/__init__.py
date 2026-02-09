@@ -16,3 +16,24 @@ from .bit_depth import bit_depth
 from .downscale_resolution import downscale_resolution
 from .banding import banding
 from .banding_luminance import banding_luminance
+
+ALL_FILTERS = (
+    original,
+    scanlines,
+    blur,
+    ca_linear,
+    ca_radial,
+    warp,
+    saturation,
+    warmth,
+    contrast,
+    vignette,
+    polaroid,
+    gamma,
+    noise,
+    posterize,
+    bit_depth,
+    downscale_resolution,
+    banding,
+    banding_luminance,
+)
