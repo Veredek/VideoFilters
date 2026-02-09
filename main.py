@@ -2,8 +2,14 @@ import os
 import cv2
 import tkinter as tk
 import uuid
-import inspect
 import subprocess
+import shutil
+import time
+import threading
+import queue
+import multiprocessing as mp
+from multiprocessing.queues import Queue as MpQueue
+from multiprocessing.synchronize import Event as MpEvent
 from cv2.typing import MatLike
 from tkinter import filedialog, ttk, messagebox
 from PIL import Image, ImageTk
@@ -16,13 +22,112 @@ PADX = 10
 PADY = 5
 VIDEO_EXTENSIONS = (".mp4", ".avi")
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
-FRAME: MatLike|None = None
 FilterFn = Callable[..., MatLike]
+
+def filter_process_loop(
+    frame_queue: MpQueue,
+    render_queue: MpQueue,
+    ctrl_queue: MpQueue,
+    stop_event: MpEvent
+) -> None:
+    from filters import (
+        original,
+        scanlines,
+        blur,
+        ca_linear,
+        ca_radial,
+        warp,
+        saturation,
+        warmth,
+        contrast,
+        vignette,
+        polaroid,
+        gamma,
+        noise,
+        posterize,
+        bit_depth,
+        downscale_resolution,
+        banding,
+        banding_luminance
+    )
+
+    filters_map = {
+        func.__name__: func
+        for func in (
+            original,
+            scanlines,
+            blur,
+            ca_linear,
+            ca_radial,
+            warp,
+            saturation,
+            warmth,
+            contrast,
+            vignette,
+            polaroid,
+            gamma,
+            noise,
+            posterize,
+            bit_depth,
+            downscale_resolution,
+            banding,
+            banding_luminance
+        )
+    }
+
+    filter_name = "original"
+    params: Dict[str, int] = {}
+    preview_max: tuple[int, int] | None = None
+
+    while not stop_event.is_set():
+        while True:
+            try:
+                msg = ctrl_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            msg_type = msg.get("type")
+            if msg_type == "update_filter":
+                filter_name = msg.get("filter_name", "original")
+                params = dict(msg.get("params", {}))
+            elif msg_type == "update_preview":
+                preview_max = msg.get("preview_max")
+            elif msg_type == "stop":
+                stop_event.set()
+                break
+
+        try:
+            frame = frame_queue.get(timeout=0.1)
+        except queue.Empty:
+            continue
+
+        if preview_max:
+            max_w, max_h = preview_max
+            h, w = frame.shape[:2]
+            if max_w > 1 and max_h > 1:
+                scale = min(max_w / w, max_h / h)
+                if scale > 0:
+                    new_w = max(1, int(w * scale))
+                    new_h = max(1, int(h * scale))
+                    if new_w != w or new_h != h:
+                        frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+        filter_fn = filters_map.get(filter_name, original)
+        if params:
+            filtered = filter_fn(frame, **params)
+        else:
+            filtered = filter_fn(frame)
+
+        try:
+            render_queue.put_nowait(filtered)
+        except queue.Full:
+            # drop frame on overload
+            pass
 
 
 class Filters:
     def __init__(self):
-        self.selected: None | str = None
+        self.selected = []
 
         # region ----|1|---- Filter Params
         self._params_defs = PARAMS_DEFS
@@ -76,24 +181,30 @@ class Filters:
             self,
             filter_name: str,
             param: str,
-            value: int
+            value: int,
+            frame: MatLike | None
         ) -> None:
 
         cfg = self._params_defs[filter_name][param]
 
         def resolve(v):
             if callable(v):
-                return v(FRAME)
+                if frame is None:
+                    return None
+                return v(frame)
             return v
 
         min_v = resolve(cfg.min)
         max_v = resolve(cfg.max)
 
-        self.params[filter_name][param] = max(min_v, min(max_v, value))
+        if min_v is None or max_v is None:
+            self.params[filter_name][param] = value
+        else:
+            self.params[filter_name][param] = max(min_v, min(max_v, value))
 
-    def apply_filter(self, frame: MatLike) -> MatLike:
-        filter_fn = self.all_filters_map[self.selected]
-        kwargs = self.params.get(self.selected)
+    def apply_filter(self, frame: MatLike, filter_str: str) -> MatLike:
+        filter_fn = self.all_filters_map[filter_str]
+        kwargs = self.params.get(filter_str)
         if kwargs:
             frame = filter_fn(frame, **kwargs)
         else:
@@ -102,101 +213,280 @@ class Filters:
         return frame
 
 
-def mux_audio(
-    video_no_audio: str, # path
-    original_video: str, # path
-    output_path: str # path
-) -> None:
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", video_no_audio,
-        "-i", original_video,
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        output_path
-    ]
+class Midia:
 
-    subprocess.run(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
+    def __init__(self):
+        self.path = ""
+        self.file_ext = ""
+        self.cap: cv2.VideoCapture | None = None
+        self.image_layers = []
+        self.playing = False
+        self.fps = 0.0
+        self.raw_queue: MpQueue | None = None
+        self.render_queue: MpQueue | None = None
+        self.ctrl_queue: MpQueue | None = None
+        self.stop_event: MpEvent | None = None
+        self.reader_thread: threading.Thread | None = None
+        self.filter_process: mp.Process | None = None
+        self.filter_lock = threading.Lock()
+        self.current_filter: str = "original"
+        self.current_params: Dict[str, int] = {}
+        self.last_frame: MatLike | None = None
+        self.last_render_frame: MatLike | None = None
+        self.preview_max: tuple[int, int] | None = None
+        self.last_preview_sent: tuple[int, int] | None = None
 
+    @property
+    def frame_time(self):
+        return 1.0 / self.fps if self.fps > 0 else 1.0 / 30.0
 
-def save_image(img: MatLike, filters: Filters):
-    path = filedialog.asksaveasfilename(
-        title="Salvar imagem",
-        defaultextension=".png",
-        initialfile=f"{uuid.uuid4().hex}.png",
-        filetypes=[
-            ("PNG", "*.png"),
-            ("JPEG", "*.jpg"),
-            ("Todos os arquivos", "*.*")
+    def _reader_loop(self):
+        next_frame_time = time.perf_counter()
+        while self.stop_event and not self.stop_event.is_set() and self.cap:
+            now = time.perf_counter()
+            if now < next_frame_time:
+                time.sleep(max(0.0, next_frame_time - now))
+                continue
+
+            ret, frame = self.cap.read()
+
+            if not ret:
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                next_frame_time = time.perf_counter()
+                continue
+
+            with self.filter_lock:
+                self.last_frame = frame
+
+            try:
+                if self.raw_queue:
+                    self.raw_queue.put_nowait(frame)
+            except queue.Full:
+                # drop frame on overload
+                pass
+
+            next_frame_time += self.frame_time
+
+    def start_video_pipeline(self, filters: Filters):
+        self.stop_video_pipeline()
+
+        # reset queues
+        with self.filter_lock:
+            self.current_filter = filters.selected[0] if filters.selected else "original"
+            self.current_params = dict(filters.params.get(self.current_filter, {}))
+            self.last_frame = None
+
+        ctx = mp.get_context("spawn")
+        self.raw_queue = ctx.Queue(maxsize=10)
+        self.render_queue = ctx.Queue(maxsize=10)
+        self.ctrl_queue = ctx.Queue()
+        self.stop_event = ctx.Event()
+
+        self.reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self.filter_process = ctx.Process(
+            target=filter_process_loop,
+            args=(self.raw_queue, self.render_queue, self.ctrl_queue, self.stop_event),
+            daemon=True
+        )
+        self.reader_thread.start()
+        self.filter_process.start()
+
+        if self.ctrl_queue:
+            self.ctrl_queue.put({
+                "type": "update_filter",
+                "filter_name": self.current_filter,
+                "params": dict(self.current_params)
+            })
+
+    def stop_video_pipeline(self):
+        if self.stop_event:
+            self.stop_event.set()
+
+        if self.reader_thread and self.reader_thread.is_alive():
+            self.reader_thread.join(timeout=0.5)
+        if self.filter_process and self.filter_process.is_alive():
+            try:
+                if self.ctrl_queue:
+                    self.ctrl_queue.put({"type": "stop"})
+            except Exception:
+                pass
+            self.filter_process.join(timeout=0.5)
+
+    def update_filter(self, filter_name: str, params: Dict[str, int]):
+        with self.filter_lock:
+            self.current_filter = filter_name
+            self.current_params = dict(params)
+
+        # clear queues to show new filter immediately
+        self._drain_queue(self.raw_queue)
+        self._drain_queue(self.render_queue)
+        self._drain_queue(self.ctrl_queue)
+
+        if self.ctrl_queue:
+            try:
+                self.ctrl_queue.put({
+                    "type": "update_filter",
+                    "filter_name": filter_name,
+                    "params": dict(params)
+                })
+            except Exception:
+                pass
+
+    def update_preview_max(self, max_w: int, max_h: int):
+        with self.filter_lock:
+            self.preview_max = (max_w, max_h)
+        if self.ctrl_queue and (max_w, max_h) != self.last_preview_sent:
+            try:
+                self.ctrl_queue.put({
+                    "type": "update_preview",
+                    "preview_max": (max_w, max_h)
+                })
+                self.last_preview_sent = (max_w, max_h)
+            except Exception:
+                pass
+
+    def _drain_queue(self, q):
+        if q is None:
+            return
+        while True:
+            try:
+                q.get_nowait()
+            except Exception:
+                break
+
+    def mux_audio(
+        self,
+        video_no_audio: str, # path
+        original_video: str, # path
+        output_path: str # path
+    ) -> None:
+        if not shutil.which("ffmpeg"):
+            raise FileNotFoundError("ffmpeg not found in PATH")
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", video_no_audio,
+            "-i", original_video,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            output_path
         ]
-    )
 
-    img = filters.apply_filter(img)
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
 
-    cv2.imwrite(path, img)
+    def save_image(self, filters: Filters):
+        path = filedialog.asksaveasfilename(
+            title="Salvar imagem",
+            defaultextension=".png",
+            initialfile=f"{uuid.uuid4().hex}.png",
+            filetypes=[
+                ("PNG", "*.png"),
+                ("JPEG", "*.jpg"),
+                ("Todos os arquivos", "*.*")
+            ]
+        )
 
+        if not path:
+            return
 
-def save_video(input_path: str, filters: Filters):
-    cap = cv2.VideoCapture(input_path)
+        img = self.image_layers[0][1]
+        if filters.selected:
+            filt = filters.selected[0]
+            img = filters.apply_filter(img, filt)
+        cv2.imwrite(path, img)
 
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        messagebox.showinfo("Save", "Image Saved Successfully!")
 
-    fourcc = cv2.VideoWriter_fourcc('m','p','4','v')
+    def save_video(self, filters: Filters):
+        fourcc = cv2.VideoWriter_fourcc('m','p','4','v')
 
-    output_path = filedialog.asksaveasfilename(
-        title="salvar video",
-        defaultextension=".mp4",
-        initialfile=f"{uuid.uuid4().hex}.mp4",
-        filetypes=[
-            ("MP4", "*.mp4"),
-            ("AVI", "*.avi")
-        ]
-    )
+        output_path = filedialog.asksaveasfilename(
+            title="salvar video",
+            defaultextension=".mp4",
+            initialfile=f"{uuid.uuid4().hex}.mp4",
+            filetypes=[
+                ("MP4", "*.mp4"),
+                ("AVI", "*.avi")
+            ]
+        )
 
-    temp_path = f"{uuid.uuid4().hex}.mp4"
+        if not output_path:
+            return
 
-    writer = cv2.VideoWriter(
-        filename=temp_path,
-        fourcc=fourcc,
-        fps=fps,
-        frameSize=(w, h)
-    )
+        temp_path = f"{uuid.uuid4().hex}.mp4"
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+        cap = cv2.VideoCapture(self.path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = fps if fps > 0 else 30
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        frame = filters.apply_filter(frame)
-        writer.write(frame)
+        writer = cv2.VideoWriter(
+            filename=temp_path,
+            fourcc=fourcc,
+            fps=fps,
+            frameSize=(w, h)
+        )
 
-    cap.release()
-    writer.release()
+        filter_name = self.current_filter
+        params = dict(self.current_params)
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-    mux_audio(
-        video_no_audio=temp_path,
-        original_video=input_path,
-        output_path=output_path
-    )
+            filter_fn = original
+            if filter_name:
+                filter_fn = filters.all_filters_map.get(filter_name, original)
 
-    # Delete temporary path
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
+            if params:
+                frame = filter_fn(frame, **params)
+            else:
+                frame = filter_fn(frame)
 
-    messagebox.showinfo("Save", "Video Saved Successfully!")
+            writer.write(frame)
+
+        writer.release()
+        cap.release()
+
+        try:
+            self.mux_audio(
+                video_no_audio=temp_path,
+                original_video=self.path,
+                output_path=output_path
+            )
+        except FileNotFoundError:
+            messagebox.showerror(
+                "ffmpeg not found",
+                "ffmpeg nao esta instalado ou nao esta no PATH. O video foi salvo sem audio."
+            )
+            os.replace(temp_path, output_path)
+            return
+        except Exception as exc:
+            messagebox.showerror(
+                "Save error",
+                f"Falha ao muxar audio: {exc}"
+            )
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return
+
+        # Delete temporary path
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        messagebox.showinfo("Save", "Video Saved Successfully!")
 
 
 class GUI:
-    def __init__(self, filters: Filters):
+    def __init__(self, filters: Filters, midia: Midia):
         # region ----|1|---- GUI Start
         self.root = tk.Tk()
         self.root.title("Midiafilt")
@@ -208,8 +498,12 @@ class GUI:
         self.y = ((screen_h - self.height) // 2) // 2
         self.root.geometry(f"{self.width}x{self.height}+{self.x}+{self.y}")
         self.root.resizable(False, False)
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.FILTER_COLUMN_WIDTH = 0.15 * self.width
         self.filters = filters
+        self.midia = midia
+        self.frame_counter = 0
+        self.next_frame_time = 0.0
         # endregion -|1|-
 
         # region ----|1|---- Root Grid
@@ -244,10 +538,6 @@ class GUI:
         self.filter_frame.grid_propagate(False)
         # endregion -|1|-
 
-        # region ----|1|---- Select File
-        self.selected_file: str | None = None
-        self.file_ext: str | None = None
-
         self.file_btn = tk.Button(
             self.filter_frame,
             text="Selecionar arquivo",
@@ -263,26 +553,19 @@ class GUI:
         self.option_combo = ttk.Combobox(
             self.filter_frame,
             textvariable=self.option_var,
-            values=(
-                list(self.filters.all_filters_map)
-                if self.file_ext in VIDEO_EXTENSIONS
-                else list(self.filters.filters_map)
-            ),
             state="readonly"
         )
 
-        self.option_combo.bind("<<ComboboxSelected>>", self.apply_filter)
+        self.option_combo.bind("<<ComboboxSelected>>", self.select_filter)
         # endregion -|1|-
 
         # region ----|1|---- Filter Params
         self.params_frame = tk.Frame(self.filter_frame, bg="lightgray")
         # endregion -|1|-
 
-        # region ----|1|---- Midia
-        self.cap = None
-        self.tk_img = None
-        self.playing = False
-        # endregion -|1|-
+    def on_close(self):
+        self.midia.stop_video_pipeline()
+        self.root.destroy()
 
     def select_file(self):
         file_path = filedialog.askopenfilename(
@@ -294,32 +577,64 @@ class GUI:
             ]
         )
 
-        self.selected_file = file_path
+        if not file_path:
+            return
+
+        # Set Midia variables
+        self.midia.path = file_path
+        self.midia.file_ext = os.path.splitext(file_path)[1].lower()
 
         # Show filters combobox
-        if self.selected_file:
-            self.option_combo.pack(padx=PADX, pady=PADY)
-            self.params_frame.pack(fill="x", padx=PADX, pady=PADY)
+        self.option_combo["values"] = (list(self.filters.all_filters_map)
+                                       if self.midia.file_ext in VIDEO_EXTENSIONS
+                                       else list(self.filters.filters_map))
 
-        self.file_ext = os.path.splitext(file_path)[1].lower()
-        if self.file_ext in IMAGE_EXTENSIONS:
-            self.show_image(file_path)
-        elif self.file_ext in VIDEO_EXTENSIONS:
-            self.show_video(file_path)
+        self.option_combo.pack(padx=PADX, pady=PADY)
+        self.params_frame.pack(fill="x", padx=PADX, pady=PADY)
+
+        if self.midia.file_ext in IMAGE_EXTENSIONS:
+            self.midia.playing = False
+
+            if self.midia.cap:
+                self.midia.stop_video_pipeline()
+                self.midia.cap.release()
+                self.midia.cap = None
+
+            self.midia.image_layers = [] # Reset
+            img = cv2.imread(file_path)
+            if img is None:
+                messagebox.showerror("Erro", "Nao foi possivel abrir a imagem.")
+                return
+            self.midia.image_layers.append((0, img))
+            self.update_image()
+
+        elif self.midia.file_ext in VIDEO_EXTENSIONS:
+            self.midia.playing = True
+
+            if self.midia.cap:
+                self.midia.cap.release()
+
+            self.midia.cap = cv2.VideoCapture(file_path)
+            self.midia.fps = self.midia.cap.get(cv2.CAP_PROP_FPS)
+            self.frame_counter = 0
+            self.next_frame_time = time.perf_counter()
+            self.midia.start_video_pipeline(self.filters)
+            self.update_video()
 
         return file_path if file_path else None
 
-    def show_image(self, path: str):
-        global FRAME
-        FRAME = cv2.imread(path)
-        if FRAME is None: return
+    def prepare_tk_img(self, cv_img: MatLike):
+        """
+        Resizes cv image to fit UI and turns it into tk image to show.
 
-        if self.filters.selected:
-            FRAME = self.filters.apply_filter(FRAME)
+        :param self:
+        :type self: GUI
+        :param cv_img:
+        :type cv_img: MatLike
+        """
+        rgb_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
 
-        img: MatLike = cv2.cvtColor(FRAME, cv2.COLOR_BGR2RGB)
-
-        h, w = img.shape[:2]
+        h, w = cv_img.shape[:2]
         frame_w = self.left_frame.winfo_width()
         frame_h = self.left_frame.winfo_height()
         scale = min(frame_w / w, frame_h / h)
@@ -327,76 +642,93 @@ class GUI:
         new_w = int(scale * w)
         new_h = int(scale * h)
 
-        if new_w > 1 and new_h > 1:
-            img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        if new_w == w and new_h == h:
+            img_resized = rgb_img
+        else:
+            img_resized = cv2.resize(rgb_img, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
         pil_img = Image.fromarray(img_resized)
-        self.tk_img = ImageTk.PhotoImage(pil_img)
+        tk_img = ImageTk.PhotoImage(pil_img)
 
-        self.midia_label.configure(image=self.tk_img)
+        return tk_img
 
-    def show_video(self, path: str):
-        if self.cap: self.cap.release()
+    def update_image(self):
+        if not self.midia.image_layers:
+            return
 
-        self.cap = cv2.VideoCapture(path)
-        self.playing = True
-        self.update_video()
-
-    def update_video(self):
-        global FRAME
-        if not self.playing or not self.cap: return
-
-        ret, FRAME = self.cap.read()
-        if not ret: # Resets the video loop
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            ret, FRAME = self.cap.read()
-            if not ret: return
-
+        cv_img: MatLike = self.midia.image_layers[0][1]
         if self.filters.selected:
-            FRAME= self.filters.apply_filter(FRAME)
+            filt = self.filters.selected[0]
+            cv_img = self.filters.apply_filter(cv_img, filt)
+        tk_img = self.prepare_tk_img(cv_img)
 
-        rgb_frame = cv2.cvtColor(FRAME, cv2.COLOR_BGR2RGB)
+        self.midia_label.image = tk_img
+        self.midia_label.configure(image=tk_img)
 
-        h, w = rgb_frame.shape[:2]
+    def update_video(self) -> None:
+        if not self.midia.playing:
+            return
+        now = time.perf_counter()
+
         frame_w = self.left_frame.winfo_width()
         frame_h = self.left_frame.winfo_height()
-        scale = min(frame_w / w, frame_h / h)
+        if frame_w > 1 and frame_h > 1:
+            self.midia.update_preview_max(frame_w, frame_h)
 
-        new_w = int(scale * w)
-        new_h = int(scale * h)
+        ui_frame_time = max(self.midia.frame_time, 1.0 / 30.0)
 
-        if new_w > 1 and new_h > 1:
-            frame_resized = cv2.resize(rgb_frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        # Wait to Frame Time
+        if now < self.next_frame_time:
+            delay_ms = int((self.next_frame_time - now) * 1000)
+            self.root.after(max(1, delay_ms), self.update_video)
+            return
 
-        pil_frame = Image.fromarray(frame_resized)
-        self.tk_img = ImageTk.PhotoImage(pil_frame)
+        if self.midia.render_queue:
+            while True:
+                try:
+                    frame = self.midia.render_queue.get_nowait()
+                    self.midia.last_render_frame = frame
+                except queue.Empty:
+                    break
 
-        self.midia_label.configure(image=self.tk_img)
+        if self.midia.last_render_frame is not None:
+            tk_frame = self.prepare_tk_img(self.midia.last_render_frame)
+            self.midia_label.image = tk_frame
+            self.midia_label.configure(image=tk_frame)
 
-        self.root.after(5, self.update_video)
+        # Prepare next Frame
+        self.next_frame_time = now + ui_frame_time
+        self.root.after(1, self.update_video)
 
-    def apply_filter(self, event: tk.Event) -> None:
-        self.filters.selected = self.option_var.get()
-        func = self.filters.all_filters_map[self.filters.selected]
+    def select_filter(self, event: tk.Event) -> None:
+        filt = self.option_var.get()
+        self.filters.selected = [filt]
+        func = self.filters.all_filters_map[filt]
 
         self.build_filter_controls(func)
 
+        # Update current filter and clear queues for immediate effect
+        self.midia.update_filter(filt, self.filters.params.get(filt, {}))
+
         # Pack Save Button
-        if self.playing:
+        if self.midia.playing:
             save_btn = tk.Button(
                 self.params_frame,
                 text="Save",
-                command=lambda: save_video(self.selected_file, self.filters)
+                command=lambda: self.midia.save_video(self.filters)
             )
         else:
             save_btn = tk.Button(
                 self.params_frame,
                 text="Save",
-                command=lambda: save_image(FRAME, self.filters)
+                command=lambda: self.midia.save_image(self.filters)
             )
         save_btn.pack(anchor='s')
 
-        if not self.playing: self.show_image(self.selected_file)
+        if self.midia.playing:
+            self.update_video()
+        else:
+            self.update_image()
         self.params_frame.pack(fill="both")
 
     def build_filter_controls(self, filter_fn: Callable):
@@ -471,17 +803,32 @@ class GUI:
 
         int_var = tk.IntVar(name=entry["textvariable"])
 
-        self.filters.set_param(filter_name, param, value)
+        frame_ref = None
+        if self.midia.playing:
+            with self.midia.filter_lock:
+                frame_ref = self.midia.last_frame
+        else:
+            frame_ref = self.midia.image_layers[-1][1] if self.midia.image_layers else None
+
+        self.filters.set_param(filter_name, param, value, frame_ref)
         new_value = self.filters.params[filter_name][param]
         int_var.set(new_value)
-        self.show_image(self.selected_file)
+
+        # Update filter params in pipeline and clear queues
+        if self.midia.playing:
+            self.midia.update_filter(filter_name, self.filters.params.get(filter_name, {}))
+
+        if not self.midia.playing:
+            self.update_image()
 
 
 def main():
 
     filters = Filters()
 
-    gui = GUI(filters)
+    midia = Midia()
+
+    gui = GUI(filters, midia)
 
     gui.root.mainloop()
 
