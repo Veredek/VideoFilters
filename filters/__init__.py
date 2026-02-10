@@ -11,6 +11,7 @@ from .vignette import vignette
 from .polaroid import polaroid
 from .gamma import gamma
 from .noise import noise
+from .grain import grain
 from .posterize import posterize
 from .bit_depth import bit_depth
 from .downscale_resolution import downscale_resolution
@@ -31,6 +32,7 @@ ALL_FILTERS = (
     polaroid,
     gamma,
     noise,
+    grain,
     posterize,
     bit_depth,
     downscale_resolution,

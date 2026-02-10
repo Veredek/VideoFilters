@@ -145,6 +145,19 @@ PARAMS_DEFS: FilterParamRegistry = {
         )
     },
 
+    "grain": {
+        "intensity": ParamDef(
+            default=20,
+            min=0,
+            max=100
+        ),
+        "grain_size": ParamDef(
+            default=2,
+            min=1,
+            max=20
+        )
+    },
+
     "posterize": {
         "levels": ParamDef(
             default=4,
