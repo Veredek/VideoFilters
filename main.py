@@ -479,6 +479,7 @@ class GUI:
         self.filter_frame.grid_propagate(False)
         # endregion -|1|-
 
+        # region ----|1|---- Select File
         self.file_btn = tk.Button(
             self.filter_frame,
             text="Selecionar arquivo",
