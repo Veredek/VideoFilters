@@ -28,6 +28,11 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=0,
             max=100
         ),
+        "width": ParamDef(
+            default=1,
+            min=1,
+            max=lambda frame: frame.shape[0]
+        ),
         "spacing": ParamDef(
             default=2,
             min=1,
