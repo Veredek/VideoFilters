@@ -505,6 +505,19 @@ class GUI:
         self.params_frame = tk.Frame(self.filter_frame, bg="lightgray")
         # endregion -|1|-
 
+    def clear_filter_controls(self) -> None:
+        for widget in self.params_frame.winfo_children():
+            widget.destroy()
+
+    def add_save_button(self) -> None:
+        save_cmd = self.midia.save_video if self.midia.playing else self.midia.save_image
+        save_btn = tk.Button(
+            self.params_frame,
+            text="Save",
+            command=lambda: save_cmd(self.filters)
+        )
+        save_btn.pack(anchor="s")
+
     def on_close(self):
         self.midia.stop_video_pipeline()
         self.root.destroy()
@@ -526,16 +539,22 @@ class GUI:
         self.midia.path = file_path
         self.midia.file_ext = os.path.splitext(file_path)[1].lower()
 
+        self.clear_filter_controls()
+
         # Show filters combobox (sorted alphabetically)
-        self.option_combo["values"] = (sorted(self.filters.all_filters_map)
-                                       if self.midia.file_ext in VIDEO_EXTENSIONS
-                                       else sorted(self.filters.filters_map))
+        available_filters = (
+            sorted(self.filters.all_filters_map)
+            if self.midia.file_ext in VIDEO_EXTENSIONS
+            else sorted(self.filters.filters_map)
+        )
+        self.option_combo["values"] = available_filters
 
         self.option_combo.pack(padx=PADX, pady=PADY)
         self.params_frame.pack(fill="x", padx=PADX, pady=PADY)
 
         if self.midia.file_ext in IMAGE_EXTENSIONS:
             self.midia.playing = False
+            self.midia.last_render_frame = None
 
             if self.midia.cap:
                 self.midia.stop_video_pipeline()
@@ -548,12 +567,13 @@ class GUI:
                 messagebox.showerror("Erro", "Nao foi possivel abrir a imagem.")
                 return
             self.midia.image_layers.append((0, img))
-            self.update_image()
 
         elif self.midia.file_ext in VIDEO_EXTENSIONS:
             self.midia.playing = True
+            self.midia.image_layers = []
 
             if self.midia.cap:
+                self.midia.stop_video_pipeline()
                 self.midia.cap.release()
 
             self.midia.cap = cv2.VideoCapture(file_path)
@@ -561,7 +581,22 @@ class GUI:
             self.frame_counter = 0
             self.next_frame_time = time.perf_counter()
             self.midia.start_video_pipeline(self.filters)
+
+        selected_filter = self.option_var.get()
+        if selected_filter in available_filters:
+            self.filters.selected = [selected_filter]
+            self.build_filter_controls(self.filters.all_filters_map[selected_filter])
+            self.midia.update_filter(selected_filter, self.filters.params.get(selected_filter, {}))
+            self.add_save_button()
+        else:
+            self.option_var.set("Select Filter")
+            self.filters.selected = []
+            self.midia.update_filter("original", {})
+
+        if self.midia.playing:
             self.update_video()
+        else:
+            self.update_image()
 
         return file_path if file_path else None
 
@@ -653,19 +688,7 @@ class GUI:
         self.midia.update_filter(filt, self.filters.params.get(filt, {}))
 
         # Pack Save Button
-        if self.midia.playing:
-            save_btn = tk.Button(
-                self.params_frame,
-                text="Save",
-                command=lambda: self.midia.save_video(self.filters)
-            )
-        else:
-            save_btn = tk.Button(
-                self.params_frame,
-                text="Save",
-                command=lambda: self.midia.save_image(self.filters)
-            )
-        save_btn.pack(anchor='s')
+        self.add_save_button()
 
         if self.midia.playing:
             self.update_video()
@@ -674,8 +697,7 @@ class GUI:
         self.params_frame.pack(fill="both")
 
     def build_filter_controls(self, filter_fn: Callable):
-        for widget in self.params_frame.winfo_children():
-            widget.destroy()
+        self.clear_filter_controls()
 
         filter_name = filter_fn.__name__
         filter_params: Dict[str, int] = self.filters.params.get(filter_name, {})
