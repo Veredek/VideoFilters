@@ -526,10 +526,10 @@ class GUI:
         self.midia.path = file_path
         self.midia.file_ext = os.path.splitext(file_path)[1].lower()
 
-        # Show filters combobox
-        self.option_combo["values"] = (list(self.filters.all_filters_map)
+        # Show filters combobox (sorted alphabetically)
+        self.option_combo["values"] = (sorted(self.filters.all_filters_map)
                                        if self.midia.file_ext in VIDEO_EXTENSIONS
-                                       else list(self.filters.filters_map))
+                                       else sorted(self.filters.filters_map))
 
         self.option_combo.pack(padx=PADX, pady=PADY)
         self.params_frame.pack(fill="x", padx=PADX, pady=PADY)
