@@ -9,6 +9,7 @@ from .warmth import warmth
 from .contrast import contrast
 from .vignette import vignette
 from .polaroid import polaroid
+from .bloom import bloom
 from .gamma import gamma
 from .noise import noise
 from .grain import grain
@@ -30,6 +31,7 @@ ALL_FILTERS = (
     contrast,
     vignette,
     polaroid,
+    bloom,
     gamma,
     noise,
     grain,

@@ -124,6 +124,24 @@ PARAMS_DEFS: FilterParamRegistry = {
         )
     },
 
+    "bloom": {
+        "intensity": ParamDef(
+            default=35,
+            min=0,
+            max=100
+        ),
+        "threshold": ParamDef(
+            default=180,
+            min=0,
+            max=255
+        ),
+        "radius": ParamDef(
+            default=8,
+            min=1,
+            max=50
+        )
+    },
+
     "gamma": {
         "gamma": ParamDef(
             default=100,
