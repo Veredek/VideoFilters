@@ -376,16 +376,13 @@ class Midia:
             frameSize=(w, h)
         )
 
-        filter_name = self.current_filter
         params = dict(self.current_params)
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
 
-            filter_fn = original
-            if filter_name:
-                filter_fn = filters.all_filters_map.get(filter_name, original)
+            filter_fn = filters.all_filters_map.get(self.current_filter, original)
 
             if params:
                 frame = filter_fn(frame, **params)
