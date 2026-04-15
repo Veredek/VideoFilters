@@ -13,6 +13,7 @@ from .bloom import bloom
 from .gamma import gamma
 from .noise import noise
 from .grain import grain
+from .dither_tpdf import dither_tpdf
 from .posterize import posterize
 from .bit_depth import bit_depth
 from .downscale_resolution import downscale_resolution
@@ -35,6 +36,7 @@ ALL_FILTERS = (
     gamma,
     noise,
     grain,
+    dither_tpdf,
     posterize,
     bit_depth,
     downscale_resolution,

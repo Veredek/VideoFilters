@@ -181,6 +181,24 @@ PARAMS_DEFS: FilterParamRegistry = {
         )
     },
 
+    "dither_tpdf": {
+        "levels": ParamDef(
+            default=8,
+            min=2,
+            max=256
+        ),
+        "dither_strength": ParamDef(
+            default=50,
+            min=0,
+            max=100
+        ),
+        "intensity": ParamDef(
+            default=100,
+            min=0,
+            max=100
+        )
+    },
+
     "posterize": {
         "levels": ParamDef(
             default=4,
