@@ -4,6 +4,7 @@ from .blur import blur
 from .ca_linear import ca_linear
 from .ca_radial import ca_radial
 from .warp import warp
+from .sine_warp import sine_warp
 from .saturation import saturation
 from .warmth import warmth
 from .contrast import contrast
@@ -27,6 +28,7 @@ ALL_FILTERS = (
     ca_linear,
     ca_radial,
     warp,
+    sine_warp,
     saturation,
     warmth,
     contrast,

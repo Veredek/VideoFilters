@@ -92,6 +92,29 @@ PARAMS_DEFS: FilterParamRegistry = {
         )
     },
 
+    "sine_warp": {
+        "amp_x": ParamDef(
+            default=10,
+            min=0,
+            max=100
+        ),
+        "amp_y": ParamDef(
+            default=10,
+            min=0,
+            max=100
+        ),
+        "period_x": ParamDef(
+            default=64,
+            min=1,
+            max=lambda frame: frame.shape[1]
+        ),
+        "period_y": ParamDef(
+            default=64,
+            min=1,
+            max=lambda frame: frame.shape[0]
+        )
+    },
+
     "saturation": {
         "intensity": ParamDef(
             default=0,
