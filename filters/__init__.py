@@ -20,6 +20,7 @@ from .bit_depth import bit_depth
 from .downscale_resolution import downscale_resolution
 from .banding import banding
 from .banding_luminance import banding_luminance
+from .slot_mask import slot_mask
 
 ALL_FILTERS = (
     original,
@@ -44,4 +45,5 @@ ALL_FILTERS = (
     downscale_resolution,
     banding,
     banding_luminance,
+    slot_mask
 )

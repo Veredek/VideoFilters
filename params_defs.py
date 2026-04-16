@@ -260,5 +260,28 @@ PARAMS_DEFS: FilterParamRegistry = {
             min=2,
             max=256
         )
+    },
+
+    "slot_mask": {
+        "intensity": ParamDef(
+            default=35,
+            min=0,
+            max=100
+        ),
+        "slot_width": ParamDef(
+            default=3,
+            min=3,
+            max=32
+        ),
+        "slot_height": ParamDef(
+            default=6,
+            min=1,
+            max=64
+        ),
+        "gap": ParamDef(
+            default=2,
+            min=0,
+            max=32
+        )
     }
 }
